@@ -398,9 +398,9 @@ def verify_option(parsed_options, logger):
 def main(argv):
     # log-opt-name, [short-opt, default, current, desc, order]
     parsed_options = {
-        'cmd-identity' : ['c:', None, None, 'identity of command server, host:protocol:username:password\nprotocol can be imap imap-ssl pop pop-ssl', 0],
-        'res-identity': ['r:', None, None, 'identity of response server, host:protocol:username:password\nprotocol can be smtp smtp-ssl smtp-starttls', 1],
-        'res-email': ['e:', None, None, 'email address of from/to when send response', 2],
+        'cmd-identity' : ['c:', None, None, 'identity of command server, host:protocol:username:password, protocol can be imap imap-ssl pop pop-ssl', 0],
+        'res-identity': ['r:', None, None, 'identity of response server, host:protocol:username:password, protocol can be smtp smtp-ssl smtp-starttls', 1],
+        'res-email': ['e:', None, None, 'email address of from/to when send response, from_email:to_email', 2],
         'magic-word' : ['m:', 'mail shell', None, 'magic word of subject', 3],
         'no-res' : ['n', False, None, 'do not send response', 4],
         'read-timeout' : ['R:', 10, None, 'read command at most x seconds', 5],
@@ -408,7 +408,7 @@ def main(argv):
         'run-timeout' : ['t:', 10, None, 'run command at most x seconds', 7],
         'verbose': ['v', False, None, 'verbose log', 8],
         'log-file': ['l:', None, None, 'log to file, not on screen', 9],
-        'help': ['h', None, None, 'show help', 10],
+        'help': ['h', False, None, 'show help', 10],
     }
 
     if not parse_option(argv, parsed_options):
@@ -422,6 +422,7 @@ def main(argv):
         get_opt_by_name(parsed_options, 'verbose'))
 
     if not verify_option(parsed_options, logger):
+        usage(argv[0], parsed_options)
         return 1
 
     dump_options(parsed_options, logger)
