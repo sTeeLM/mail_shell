@@ -30,9 +30,9 @@ def init_log(
         log_handle.setFormatter(log_formatter)
         log_filter = logging.Filter()
         if verbose:
-            log_filter.filter = lambda record: record.levelno == logging.DEBUG
+            log_filter.filter = lambda record: record.levelno >= logging.DEBUG
         else:
-            log_filter.filter = lambda record: record.levelno == logging.INFO
+            log_filter.filter = lambda record: record.levelno >= logging.INFO
         log_handle.addFilter(log_filter)
         logger.addHandler(log_handle)
     else:
