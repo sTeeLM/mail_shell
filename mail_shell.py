@@ -21,7 +21,7 @@ def init_log(
     fmt_console = '[%(levelname)s] %(message)s'
     fmt_file  = '%(asctime)s|%(filename)s|%(lineno)d|%(levelname)s|%(process)s|%(message)s'
     log_level = logging.DEBUG
-    if log_file:
+    if log_file != '':
         logger = logging.getLogger(prog_name)
         logger.setLevel(log_level)
         log_handle = logging.FileHandler(log_file, 'a', encoding='utf-8')
@@ -49,15 +49,20 @@ def usage(prog_name, parsed_options):
     sys.stderr.write("%s:\n" % (prog_name))
     for (opt, value) in sorted(parsed_options.items(), key=lambda item: item[1][4]):
         sys.stderr.write(
-            "   -%s|--%s: %s\n"
-            % (parsed_options[opt][0].strip(':'), opt, parsed_options[opt][3])
-        )
-        if parsed_options[opt][0][-1] == ':':
-            sys.stderr.write(
-                "             arg reguired, default: %s\n" % str(parsed_options[opt][1])
-            )
+            "   -%s|--%s : %s\n"
+            % (parsed_options[opt][0].strip(':'), opt, parsed_options[opt][3]))
+
+        if parsed_options[opt][1] != None:
+            if parsed_options[opt][0][-1] == ':':
+                sys.stderr.write('      optional, need argument, default: "%s"\n' % str(parsed_options[opt][1]))
+            else:
+                sys.stderr.write('      optional, default: "%s"\n' % str(parsed_options[opt][1]))
         else:
-            sys.stderr.write("             default: %s\n" % str(parsed_options[opt][1]))
+            if parsed_options[opt][0][-1] == ':':
+                sys.stderr.write('      required, need argument\n')
+            else:
+                sys.stderr.write('      required\n')
+
 
 def dump_options(parsed_options, logger):
     logger.debug('-------------dump options begin--------------')
@@ -100,10 +105,20 @@ def parse_option(argv, parsed_options):
         return False
     return True
 
+def parse_overides(logger, subjects_str):
+    overides = {}
+    if subjects_str:
+        opts = subjects_str.split(':')
+    for opt in opts:
+        if len(opt.split('=')) == 2:
+            (key, val) = opt.split('=')
+            overides[key] = val
+    return overides
+
 def fetch_cmd_pop(logger, cmd_timeout, cmd_server, 
     cmd_protocol, cmd_username, cmd_password, magic_word, is_ssl):
     comm = None
-
+    overides = None
     if not is_ssl:
         try:
             cmd_obj = poplib.POP3(
@@ -113,7 +128,7 @@ def fetch_cmd_pop(logger, cmd_timeout, cmd_server,
         except Exception as ext:
             logger.error('can not connect %s as %s: %s' % 
                 (cmd_server, cmd_protocol, str(ext)));
-            return None
+            return (None, None)
     else:
         try:
             cmd_obj = poplib.POP3_SSL(
@@ -123,7 +138,7 @@ def fetch_cmd_pop(logger, cmd_timeout, cmd_server,
         except Exception as ext:
             logger.error('can not connect %s as %s: %s' % 
                 (cmd_server, cmd_protocol, str(ext)));
-            return None
+            return (None, None)
 
     logger.info('connect to %s as %s ok' % (
         cmd_server, cmd_protocol))
@@ -143,23 +158,26 @@ def fetch_cmd_pop(logger, cmd_timeout, cmd_server,
             msg_content = b'\r\n'.join(lines).decode('utf-8')
             msg = email.parser.Parser().parsestr(msg_content)
             if msg.get_content_type() != 'text/plain':
-                logger.warn('skip non-text/plain payload \n%s' % (str(msg)))
+                logger.debug('skip non-text/plain payload \n%s' % (str(msg)))
                 continue
-            if msg.get('Subject').find(magic_word) != -1:
+            if msg.get('Subject').find(magic_word) == 0:
                 comm = msg.get_payload(decode = True).decode('utf-8').rstrip('\r\n ').strip('\r\n ')
+                overides = parse_overides(logger, msg.get('Subject'))
+                logger.info('fetched command: "%s" %s' % (comm, overides))
                 state = cmd_obj.dele(i+1)
                 logger.info('dele return %s' % (resp));
-                continue;
+                break;
         cmd_obj.quit()
         cmd_obj.close()
     except Exception as ext:
         logger.error('can not fetch cmd %s' % (str(ext)))
-    return comm
+    return (comm, overides)
 
 
 def fetch_cmd_imap(logger, cmd_timeout, cmd_server, 
     cmd_protocol, cmd_username, cmd_password, magic_word, is_ssl):
     comm = None
+    overides = None
     if not is_ssl:
         try:
             cmd_obj = imaplib.IMAP4(
@@ -169,7 +187,7 @@ def fetch_cmd_imap(logger, cmd_timeout, cmd_server,
         except Exception as ext:
             logger.error('can not connect %s as %s: %s' % 
                 (cmd_server, cmd_protocol, str(ext)));
-            return None
+            return (None, None)
     else:
         try:
             cmd_obj = imaplib.IMAP4_SSL(
@@ -179,92 +197,51 @@ def fetch_cmd_imap(logger, cmd_timeout, cmd_server,
         except Exception as ext:
             logger.error('can not connect %s as %s: %s' % 
                 (cmd_server, cmd_protocol, str(ext)));
-            return None
+            return (None, None)
  
     logger.info('connect to %s as %s ok' % (
         cmd_server, cmd_protocol))
 
     try:
-        state, msg = cmd_obj.login(cmd_username, cmd_password)
-        if state != 'OK' :
-            logger.error('can not login into host %s %s %s' % (
+        state, response = cmd_obj.login(cmd_username, cmd_password)
+        logger.info('login into host %s %s %s' % (
                 cmd_server,
-                state, msg
-            ))
-            cmd_obj.close()
-            return None
-        else:
-            logger.info('login into host %s %s %s' % (
-                cmd_server,
-                state, msg
-            ))
+                state, response))
             
-        state, msg = cmd_obj.select('INBOX')
-        if state != 'OK' :
-            logger.error('can not switch into inbox %s %s' % (
-                state, msg
-            ))
-            cmd_obj.close()
-            return None
-        else:
-            logger.info('switch into inbox response %s %s' % (
-                state, msg
-            ))
+        state, response = cmd_obj.select('INBOX')
+        logger.info('switch into inbox response %s %s' % (
+                state, response))
 
-        state, msg = cmd_obj.search(None, 'SUBJECT', magic_word)
-        if state != 'OK' :
-            logger.error('can not search magic word "%s" %s %s' % (
+        state, response = cmd_obj.search(None, 'ALL')
+        logger.info('search return "%s" %s %s' % (
                 magic_word,
-                state, msg
-            ))
+                state, response))
+
+        if len(response) == 0 or not response[0]:
+            logger.info('no mail found');
             cmd_obj.close()
-            return None
-        else:
-            logger.info('search magic word "%s" %s %s' % (
-                magic_word,
-                state, msg
-            ))
-        if len(msg) == 0 or not msg[0]:
-            logger.info('no magic word found');
-            cmd_obj.close()
-            return None
-        
-        num_to_delete = msg[0]
-        state, msg = cmd_obj.fetch(msg[0], '(RFC822)')
-        if state != 'OK' or len(msg) == 0 or not msg[0]:
-            logger.error('can fetch email %s %s' % (
-                state, msg
-            ))
-            cmd_obj.close()
-            return None
-        comm = email.message_from_bytes(msg[0][1])
-        logger.debug('fetched message \n%s' % (str(comm)))
-        if comm.get_content_type() != 'text/plain':
-            logger.warn('skip non-text/plain payload \n%s' % (str(comm)))
-            cmd_obj.close()
-            return None
-        comm = comm.get_payload(decode = True).decode('utf-8').rstrip('\r\n ').strip('\r\n ')
-        logger.info('fetched command: "%s"' % (comm))
-        
-        state, msg = cmd_obj.store(num_to_delete, '+FLAGS', '\\Deleted')
-        if state != 'OK' :
-            logger.error('can not delete mail number %s %s %s' % (
-                num_to_delete,
-                state, msg
-            ))
-            cmd_obj.close()
-            return None
-        else:
-            logger.info('delete mail number %s %s %s' % (
-                num_to_delete,
-                state, msg
-            ))
+            return (None, None)
+
+        for i in response[0].split():
+            state, res = cmd_obj.fetch(i, '(RFC822)')
+            msg = email.message_from_bytes(res[0][1])
+            logger.debug('fetched message \n%s' % (str(msg)))
+            if msg.get_content_type() != 'text/plain':
+                logger.warn('skip non-text/plain payload \n%s' % (str(msg)))
+                continue
+            if msg.get('Subject').find(magic_word) == 0:
+                comm = msg.get_payload(decode = True).decode('utf-8').rstrip('\r\n ').strip('\r\n ')
+                overides = parse_overides(logger, msg.get('Subject'))
+                logger.info('fetched command: "%s" %s' % (comm, overides))
+                state, res = cmd_obj.store(i, '+FLAGS', '\\Deleted')
+                logger.info('delete mail number %s %s %s' % (
+                    i, state, res))
+                break;
             cmd_obj.quit()
             cmd_obj.close()
-
     except Exception as ext:
         logger.error('can not fetch cmd %s' % (str(ext)))
-    return comm    
+    return (comm,overides)    
 
 def fetch_cmd(parsed_options, logger, identity):
     (cmd_server, cmd_protocol, cmd_username, cmd_password) \
@@ -275,7 +252,6 @@ def fetch_cmd(parsed_options, logger, identity):
             identity['command']['password'],
         )
     
-
     if cmd_protocol == 'imap' or cmd_protocol == 'imap-ssl':
         return fetch_cmd_imap(
             logger,
@@ -293,18 +269,31 @@ def fetch_cmd(parsed_options, logger, identity):
             cmd_protocol == 'pop-ssl'
         )
     else:
-        return None
+        return (None, None)
 
-def run_cmd(parsed_options, logger, comm):
+def run_cmd(parsed_options, logger, comm, overides):
     res = None
-    logger.debug('will run cmd "%s"' % (comm))
+    time_out = get_opt_by_name(parsed_options, 'run-timeout')
+    no_res = get_opt_by_name(parsed_options, 'no-res')
+
+    if overides and overides.get("timeout"):
+        time_out = int(overides['timeout'])
+
+    if time_out == 0:
+        time_out = None
+
+    if overides and overides.get("no-res"):
+        no_res = overides['no-res'] = 'true'
+
+    logger.debug('will run cmd "%s" %s' % (comm, overides))
+
     try:
         result = subprocess.run(
             comm, 
             shell=True, 
             stdout=subprocess.PIPE, 
             stderr=subprocess.PIPE, 
-            timeout=get_opt_by_name(parsed_options, 'run-timeout'))
+            timeout=time_out)
         res = 'run command ok:\nstdout:\n'
         res += result.stdout.decode('utf-8')
         res += 'stderr:\n'
@@ -313,7 +302,10 @@ def run_cmd(parsed_options, logger, comm):
         logger.error('can not run cmd "%s": %s' % (comm, str(ext)))
         res = 'run command failed:\n'
         res += str(ext)
-    return res
+    if not no_res:
+        return res
+    else:
+        return None
 
 def email_format_addr(s):
     name, addr = email.utils.parseaddr(s)
@@ -332,7 +324,8 @@ def send_res(parsed_options, logger, identity, comm, res):
     msg = email.mime.text.MIMEText(res, 'plain', 'utf-8')
     msg['From'] = email_format_addr('%s <%s>' % (from_email, from_email))
     msg['To'] = email_format_addr('%s <%s>' % (to_email, to_email))
-    msg['Subject'] = email.header.Header('Response for "%s"' % (comm), 'utf-8').encode()
+    msg['Subject'] = email.header.Header(get_opt_by_name(parsed_options, 
+        'res-subject') % (comm), 'utf-8').encode()
     try:
         if res_protocol == 'smtp':
             res_obj = smtplib.SMTP(host = res_server,
@@ -437,13 +430,14 @@ def main(argv):
     parsed_options = {
         'identity-file' : ['f:', None, None, 'identity of command server and response server', 0],
         'magic-word' : ['m:', 'mail shell', None, 'magic word of subject', 1],
-        'no-res' : ['n', False, None, 'do not send response', 2],
-        'read-timeout' : ['R:', 10, None, 'read command at most x seconds', 3],
-        'send-timeout' : ['w:', 10, None, 'write response at most x seconds', 4],
-        'run-timeout' : ['t:', 10, None, 'run command at most x seconds', 5],
-        'verbose': ['v', False, None, 'verbose log', 6],
-        'log-file': ['l:', None, None, 'log to file, not on screen', 7],
-        'help': ['h', False, None, 'show help', 8],
+        'res-subject' : ['s:', 'Response of %s', None, 'patten of response subject', 2],
+        'no-res' : ['n', False, None, 'do not send response', 3],
+        'read-timeout' : ['r:', 10, None, 'read command at most x seconds', 4],
+        'send-timeout' : ['w:', 10, None, 'write response at most x seconds', 5],
+        'run-timeout' : ['t:', 10, None, 'run command at most x seconds', 6],
+        'verbose': ['v', False, None, 'verbose log', 7],
+        'log-file': ['l:', '', None, 'log to file, empty means log on screen', 8],
+        'help': ['h', False, None, 'show help', 9],
     }
 
     if not parse_option(argv, parsed_options):
@@ -464,10 +458,10 @@ def main(argv):
 
     identity = load_identity_file(parsed_options, logger)
 
-    comm = fetch_cmd(parsed_options, logger, identity)
+    (comm, overides) = fetch_cmd(parsed_options, logger, identity)
 
     if comm:
-        res = run_cmd(parsed_options, logger, comm)
+        res = run_cmd(parsed_options, logger, comm, overides)
         if res and not get_opt_by_name(parsed_options, 'no-res'):
             send_res(parsed_options, logger, identity, comm, res)
 
