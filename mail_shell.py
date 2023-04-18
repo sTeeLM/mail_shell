@@ -11,6 +11,7 @@ import sys
 import logging
 import subprocess
 import smtplib
+import configparser
 
 def init_log(
     prog_name,
@@ -182,6 +183,7 @@ def fetch_cmd_imap(logger, cmd_timeout, cmd_server,
  
     logger.info('connect to %s as %s ok' % (
         cmd_server, cmd_protocol))
+
     try:
         state, msg = cmd_obj.login(cmd_username, cmd_password)
         if state != 'OK' :
@@ -264,10 +266,16 @@ def fetch_cmd_imap(logger, cmd_timeout, cmd_server,
         logger.error('can not fetch cmd %s' % (str(ext)))
     return comm    
 
-def fetch_cmd(parsed_options, logger):
-    cmd_server, cmd_protocol, cmd_username, cmd_password \
-        = get_opt_by_name(parsed_options, 'cmd-identity').split(':')
+def fetch_cmd(parsed_options, logger, identity):
+    (cmd_server, cmd_protocol, cmd_username, cmd_password) \
+        = (
+            identity['command']['server'],
+            identity['command']['protocol'],
+            identity['command']['username'],
+            identity['command']['password'],
+        )
     
+
     if cmd_protocol == 'imap' or cmd_protocol == 'imap-ssl':
         return fetch_cmd_imap(
             logger,
@@ -311,11 +319,16 @@ def email_format_addr(s):
     name, addr = email.utils.parseaddr(s)
     return email.utils.formataddr((email.header.Header(name, 'utf-8').encode(), addr))
 
-def send_res(parsed_options, logger, comm, res):
+def send_res(parsed_options, logger, identity, comm, res):
     logger.debug('will send comm res "%s" "%s"' % (comm, res))
-    res_server, res_protocol, res_username, res_password \
-        = get_opt_by_name(parsed_options, 'res-identity').split(':')
-    from_email, to_email = get_opt_by_name(parsed_options, 'res-email').split(':')
+    (res_server, res_protocol, res_username, res_password) =  \
+        (
+            identity['response']['server'],
+            identity['response']['protocol'],
+            identity['response']['username'],
+            identity['response']['password'],
+        )
+    (from_email, to_email) = (identity['email']['from'], identity['email']['to'])
     msg = email.mime.text.MIMEText(res, 'plain', 'utf-8')
     msg['From'] = email_format_addr('%s <%s>' % (from_email, from_email))
     msg['To'] = email_format_addr('%s <%s>' % (to_email, to_email))
@@ -348,48 +361,72 @@ def send_res(parsed_options, logger, comm, res):
                 (res_server, res_protocol, str(ext)));
         return None
     
+def load_identity_file(parsed_options, logger):
+    config = configparser.ConfigParser()
+    indentity = {}
+    try:
+        config.read(get_opt_by_name(parsed_options, 'identity-file'))
+        indentity['command'] = {
+            'server' : config['command']['server'],
+            'protocol' : config['command']['protocol'],
+            'username' : config['command']['username'],
+            'password' : config['command']['password'],
+        }
+        indentity['response'] = {
+            'server' : config['response']['server'],
+            'protocol' : config['response']['protocol'],
+            'username' : config['response']['username'],
+            'password' : config['response']['password'],
+        }
+        indentity['email'] = {
+            'from' : config['email']['from'],
+            'to' : config['email']['to'],
+        }
+    except Exception as ext:
+        logger.error('can not read indenty-file %s' \
+            % (get_opt_by_name(parsed_options, 'identity-file')))
+        return None
+
+    return indentity
  
 def verify_option(parsed_options, logger):
-    if not get_opt_by_name(parsed_options, 'cmd-identity') or \
-        len(get_opt_by_name(parsed_options, 'cmd-identity').split(':')) != 4:
-        logger.error('cmd-identity not set or invalid');
+    if not get_opt_by_name(parsed_options, 'identity-file') :
+        logger.error('identity-file not set');
         return False
 
-    if not get_opt_by_name(parsed_options, 'res-identity') or \
-        len(get_opt_by_name(parsed_options, 'res-identity').split(':')) != 4:
-        logger.error('res-identity not set or invalid');
+    identity = load_identity_file(parsed_options, logger)
+    if not identity:
+        logger.error('identity-file load failed');
         return False
 
-    if not get_opt_by_name(parsed_options, 'res-email') or \
-        len(get_opt_by_name(parsed_options, 'res-email').split(':')) != 2:
-        logger.error('res-email not set or invalid');
+    if not identity['command']['server'] or \
+        not identity['command']['protocol'] or \
+        not identity['command']['username'] or \
+        not identity['command']['password']:
+        logger.error('command server not set or invalid');
         return False
 
-    cmd_server, cmd_protocol, cmd_username, cmd_password = get_opt_by_name(parsed_options, 'cmd-identity').split(':')
-    res_server, res_protocol, res_username, res_password = get_opt_by_name(parsed_options, 'res-identity').split(':')
-
-    if not cmd_server or not cmd_server or not cmd_server:
-        logger.error('res-identity not set or invalid');
-        return False
-
-    if cmd_protocol != 'imap' and \
-       cmd_protocol != 'imap-ssl' and \
-       cmd_protocol != 'pop' and \
-       cmd_protocol != 'pop-ssl':
-        logger.error('invalid cmd-protocol %s' % (
-            cmd_protocol
+    if identity['command']['protocol'] != 'imap' and \
+       identity['command']['protocol'] != 'imap-ssl' and \
+       identity['command']['protocol'] != 'pop' and \
+       identity['command']['protocol'] != 'pop-ssl':
+        logger.error('invalid protocol %s' % (
+            identity['command']['protocol']
         ));
         return False
 
-    if not res_server or not res_username or not res_password:
-        logger.error('res-identity not set or invalid');
+    if not identity['response']['server'] or \
+        not identity['response']['protocol'] or \
+        not identity['response']['username'] or \
+        not identity['response']['password']:
+        logger.error('response server not set or invalid');
         return False
 
-    if res_protocol != 'smtp' and \
-       res_protocol != 'smtp-ssl' and \
-       res_protocol != 'smtp-starttls' :
+    if identity['response']['protocol'] != 'smtp' and \
+       identity['response']['protocol'] != 'smtp-ssl' and \
+       identity['response']['protocol'] != 'smtp-starttls' :
         logger.error('invalid res-protocol %s' % (
-            res_protocol
+            identity['response']['protocol']
         ));
         return False
     return True
@@ -398,17 +435,15 @@ def verify_option(parsed_options, logger):
 def main(argv):
     # log-opt-name, [short-opt, default, current, desc, order]
     parsed_options = {
-        'cmd-identity' : ['c:', None, None, 'identity of command server, host:protocol:username:password, protocol can be imap imap-ssl pop pop-ssl', 0],
-        'res-identity': ['r:', None, None, 'identity of response server, host:protocol:username:password, protocol can be smtp smtp-ssl smtp-starttls', 1],
-        'res-email': ['e:', None, None, 'email address of from/to when send response, from_email:to_email', 2],
-        'magic-word' : ['m:', 'mail shell', None, 'magic word of subject', 3],
-        'no-res' : ['n', False, None, 'do not send response', 4],
-        'read-timeout' : ['R:', 10, None, 'read command at most x seconds', 5],
-        'send-timeout' : ['w:', 10, None, 'write response at most x seconds', 6],
-        'run-timeout' : ['t:', 10, None, 'run command at most x seconds', 7],
-        'verbose': ['v', False, None, 'verbose log', 8],
-        'log-file': ['l:', None, None, 'log to file, not on screen', 9],
-        'help': ['h', False, None, 'show help', 10],
+        'identity-file' : ['f:', None, None, 'identity of command server and response server', 0],
+        'magic-word' : ['m:', 'mail shell', None, 'magic word of subject', 1],
+        'no-res' : ['n', False, None, 'do not send response', 2],
+        'read-timeout' : ['R:', 10, None, 'read command at most x seconds', 3],
+        'send-timeout' : ['w:', 10, None, 'write response at most x seconds', 4],
+        'run-timeout' : ['t:', 10, None, 'run command at most x seconds', 5],
+        'verbose': ['v', False, None, 'verbose log', 6],
+        'log-file': ['l:', None, None, 'log to file, not on screen', 7],
+        'help': ['h', False, None, 'show help', 8],
     }
 
     if not parse_option(argv, parsed_options):
@@ -427,11 +462,13 @@ def main(argv):
 
     dump_options(parsed_options, logger)
 
-    comm = fetch_cmd(parsed_options, logger)
+    identity = load_identity_file(parsed_options, logger)
+
+    comm = fetch_cmd(parsed_options, logger, identity)
 
     if comm:
         res = run_cmd(parsed_options, logger, comm)
         if res and not get_opt_by_name(parsed_options, 'no-res'):
-            send_res(parsed_options, logger, comm, res)
+            send_res(parsed_options, logger, identity, comm, res)
 
 main(sys.argv)
