@@ -283,7 +283,7 @@ def run_cmd(parsed_options, logger, comm, overides):
         time_out = None
 
     if overides and overides.get("no-res"):
-        no_res = overides['no-res'] = 'true'
+        no_res = overides['no-res'] == 'true'
 
     logger.debug('will run cmd "%s" %s' % (comm, overides))
 
