@@ -14,8 +14,52 @@ import smtplib
 import configparser
 import contextlib
 
-def empty_call():
-    pass
+
+class LoggerWriter:
+    def __init__(self, prog_name, log_file,verbose):
+        fmt_console = '[%(levelname)s] %(message)s'
+        fmt_file  = '%(asctime)s|%(filename)s|%(lineno)d|%(levelname)s|%(process)s|%(message)s'
+        log_level = logging.DEBUG
+        if log_file != '':
+            self.logger = logging.getLogger(prog_name)
+            self.logger.setLevel(log_level)
+            log_handle = logging.FileHandler(log_file, 'a', encoding='utf-8')
+            log_handle.setLevel(logging.DEBUG)
+            log_formatter = logging.Formatter(fmt_file)
+            log_handle.setFormatter(log_formatter)
+            log_filter = logging.Filter()
+            if verbose:
+                log_filter.filter = lambda record: record.levelno >= logging.DEBUG
+            else:
+                log_filter.filter = lambda record: record.levelno >= logging.INFO
+            log_handle.addFilter(log_filter)
+            self.logger.addHandler(log_handle)
+        else:
+            if verbose:
+                log_level = logging.DEBUG
+            else:
+                log_level = logging.INFO
+            logging.basicConfig(format=fmt_console, level=log_level)
+            self.logger = logging.getLogger(prog_name)
+
+    def write(self, msg):
+        if msg:
+            self.logger.debug(msg.strip('\r\n'))
+
+    def flush(self):
+        pass
+
+    def debug(self, msg):
+        self.logger.debug(msg.strip('\r\n'))
+
+    def warn(self, msg):
+        self.logger.warn(msg.strip('\r\n'))
+
+    def error(self, msg):
+        self.logger.error(msg.strip('\r\n'))
+
+    def info(self, msg):
+        self.logger.info(msg.strip('\r\n'))
 
 def init_log(
     prog_name,
@@ -462,7 +506,7 @@ def main(argv):
         usage(argv[0], parsed_options)
         return 0
 
-    logger = init_log(argv[0], get_opt_by_name(parsed_options, 'log-file'), 
+    logger = LoggerWriter(argv[0], get_opt_by_name(parsed_options, 'log-file'), 
         get_opt_by_name(parsed_options, 'verbose'))
 
     if not verify_option(parsed_options, logger):
