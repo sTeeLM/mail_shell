@@ -288,20 +288,25 @@ def run_cmd(parsed_options, logger, comm, overides):
     logger.debug('will run cmd "%s" %s' % (comm, overides))
 
     try:
+        stdout_file = open('/tmp/stdout_file_mail_shell','w+')
+        stderr_file = open('/tmp/stderr_file_mail_shell','w+')
         result = subprocess.run(
             comm, 
             shell=True, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
+            stdout=stdout_file, 
+            stderr=stderr_file, 
             timeout=time_out)
+        stdout_file.seek(0)
+        stderr_file.seek(0)
         res = 'run command ok:\nstdout:\n'
-        res += result.stdout.decode('utf-8')
+        res += stdout_file.read()
         res += 'stderr:\n'
-        res += result.stderr.decode('utf-8')
+        res += stderr_file.read()
+        stdout_file.close()
+        stderr_file.close()
     except Exception as ext:
         logger.error('can not run cmd "%s": %s' % (comm, str(ext)))
-        res = 'run command failed:\n'
-        res += str(ext)
+        res = 'run command failed: %s\n' %(str(ext))
     if not no_res:
         return res
     else:
