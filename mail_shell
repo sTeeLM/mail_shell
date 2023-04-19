@@ -1,0 +1,9 @@
+/var/log/mail/mail_shell.log {
+  weekly
+  rotate 100
+  create 644 root root
+  size 10M
+  dateext
+  compress
+  notifempty
+}
