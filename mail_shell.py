@@ -577,6 +577,6 @@ def main(argv):
         res = run_cmd(parsed_options, logger, comm, overides)
         if res and not get_opt_by_name(parsed_options, "no-res"):
             send_res(parsed_options, logger, identity, comm, res)
+    return 0
 
-
-main(sys.argv)
+sys.exit(main(sys.argv))
