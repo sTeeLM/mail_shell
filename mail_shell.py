@@ -13,6 +13,7 @@ import subprocess
 import smtplib
 import configparser
 import contextlib
+import argparse
 
 
 class LoggerWriter:
@@ -96,77 +97,13 @@ def init_log(prog_name, log_file, verbose=False):
     return logger
 
 
-def usage(prog_name, parsed_options):
-    sys.stderr.write("%s:\n" % (prog_name))
-    for opt, value in sorted(parsed_options.items(), key=lambda item: item[1][4]):
-        sys.stderr.write(
-            "   -%s|--%s : %s\n"
-            % (parsed_options[opt][0].strip(":"), opt, parsed_options[opt][3])
-        )
-
-        if parsed_options[opt][1] != None:
-            if parsed_options[opt][0][-1] == ":":
-                sys.stderr.write(
-                    '      optional, need argument, default: "%s"\n'
-                    % str(parsed_options[opt][1])
-                )
-            else:
-                sys.stderr.write(
-                    '      optional, default: "%s"\n' % str(parsed_options[opt][1])
-                )
-        else:
-            if parsed_options[opt][0][-1] == ":":
-                sys.stderr.write("      required, need argument\n")
-            else:
-                sys.stderr.write("      required\n")
-
 
 def dump_options(parsed_options, logger):
-    logger.debug("-------------dump options begin--------------")
-    for opt, value in sorted(parsed_options.items(), key=lambda item: item[1][4]):
-        logger.debug(
-            "%s: default %s, current %s"
-            % (opt, parsed_options[opt][1], parsed_options[opt][2])
-        )
-    logger.debug("-------------dump options end--------------")
+    logger.debug(str(parsed_options))
 
 
 def get_opt_by_name(parsed_options, opt):
-    if parsed_options[opt][2]:
-        return parsed_options[opt][2]
-    else:
-        return parsed_options[opt][1]
-
-
-def parse_option(argv, parsed_options):
-    short_opts = ""
-    long_opts = []
-    reverse_opt_hash = {}
-    for key in parsed_options:
-        short_opts += parsed_options[key][0]
-        if parsed_options[key][0][-1] == ":":
-            long_opts.append(key + "=")
-        else:
-            long_opts.append(key)
-        reverse_opt_hash[("-" + parsed_options[key][0].strip(":"), "--" + key)] = key
-
-    try:
-        opts, arg = getopt.getopt(argv[1:], short_opts, long_opts)
-        for opt, arg in opts:
-            for short_opt, long_opt in reverse_opt_hash:
-                if opt in (short_opt, long_opt):
-                    if (
-                        parsed_options[reverse_opt_hash[(short_opt, long_opt)]][0][-1]
-                        == ":"
-                    ):
-                        parsed_options[reverse_opt_hash[(short_opt, long_opt)]][2] = arg
-                    else:
-                        parsed_options[reverse_opt_hash[(short_opt, long_opt)]][2] = True
-    except getopt.GetoptError as err:
-        sys.stderr.write("command line parse error: %s\n" % (err))
-        usage(argv[0], parsed_options)
-        return False
-    return True
+    return parsed_options[opt]
 
 
 def parse_overides(logger, subjects_str):
@@ -324,23 +261,23 @@ def fetch_cmd(parsed_options, logger, identity):
     if cmd_protocol == "imap" or cmd_protocol == "imap-ssl":
         return fetch_cmd_imap(
             logger,
-            get_opt_by_name(parsed_options, "read-timeout"),
+            get_opt_by_name(parsed_options, "read_timeout"),
             cmd_server,
             cmd_protocol,
             cmd_username,
             cmd_password,
-            get_opt_by_name(parsed_options, "magic-word"),
+            get_opt_by_name(parsed_options, "magic_word"),
             cmd_protocol == "imap-ssl",
         )
     elif cmd_protocol == "pop" or cmd_protocol == "pop-ssl":
         return fetch_cmd_pop(
             logger,
-            get_opt_by_name(parsed_options, "read-timeout"),
+            get_opt_by_name(parsed_options, "read_timeout"),
             cmd_server,
             cmd_protocol,
             cmd_username,
             cmd_password,
-            get_opt_by_name(parsed_options, "magic-word"),
+            get_opt_by_name(parsed_options, "magic_word"),
             cmd_protocol == "pop-ssl",
         )
     else:
@@ -349,8 +286,8 @@ def fetch_cmd(parsed_options, logger, identity):
 
 def run_cmd(parsed_options, logger, comm, overides):
     res = None
-    time_out = get_opt_by_name(parsed_options, "run-timeout")
-    no_res = get_opt_by_name(parsed_options, "no-res")
+    time_out = get_opt_by_name(parsed_options, "run_timeout")
+    no_res = get_opt_by_name(parsed_options, "no_res")
 
     if overides and overides.get("timeout"):
         time_out = int(overides["timeout"])
@@ -405,24 +342,24 @@ def send_res(parsed_options, logger, identity, comm, res):
     msg["From"] = email_format_addr("%s <%s>" % (from_email, from_email))
     msg["To"] = email_format_addr("%s <%s>" % (to_email, to_email))
     msg["Subject"] = email.header.Header(
-        get_opt_by_name(parsed_options, "res-subject") % (comm), "utf-8"
+        get_opt_by_name(parsed_options, "res_subject") % (comm), "utf-8"
     ).encode()
     with contextlib.redirect_stderr(logger):
         try:
             if res_protocol == "smtp":
                 res_obj = smtplib.SMTP(
                     host=res_server,
-                    timeout=get_opt_by_name(parsed_options, "send-timeout"),
+                    timeout=get_opt_by_name(parsed_options, "send_timeout"),
                 )
             elif res_protocol == "smtp-ssl":
                 res_obj = smtplib.SMTP_SSL(
                     host=res_server,
-                    timeout=get_opt_by_name(parsed_options, "send-timeout"),
+                    timeout=get_opt_by_name(parsed_options, "send_timeout"),
                 )
             else:
                 res_obj = smtplib.SMTP(
                     host=res_server,
-                    timeout=get_opt_by_name(parsed_options, "send-timeout"),
+                    timeout=get_opt_by_name(parsed_options, "send_timeout"),
                 )
         except Exception as ext:
             logger.error(
@@ -455,7 +392,7 @@ def load_identity_file(parsed_options, logger):
     config = configparser.ConfigParser()
     indentity = {}
     try:
-        config.read(get_opt_by_name(parsed_options, "identity-file"))
+        config.read(get_opt_by_name(parsed_options, "identity_file"))
         indentity["command"] = {
             "server": config["command"]["server"],
             "protocol": config["command"]["protocol"],
@@ -475,7 +412,7 @@ def load_identity_file(parsed_options, logger):
     except Exception as ext:
         logger.error(
             "can not read indenty-file %s"
-            % (get_opt_by_name(parsed_options, "identity-file"))
+            % (get_opt_by_name(parsed_options, "identity_file"))
         )
         return None
 
@@ -483,7 +420,7 @@ def load_identity_file(parsed_options, logger):
 
 
 def verify_option(parsed_options, logger):
-    if not get_opt_by_name(parsed_options, "identity-file"):
+    if not get_opt_by_name(parsed_options, "identity_file"):
         logger.error("identity-file not set")
         return False
 
@@ -530,36 +467,65 @@ def verify_option(parsed_options, logger):
 
 
 def main(argv):
-    # log-opt-name, [short-opt, default, current, desc, order]
-    parsed_options = {
-        "identity-file": [
-            "f:",
-            None,
-            None,
-            "identity of command server and response server",
-            0,
-        ],
-        "magic-word": ["m:", "mail shell", None, "magic word of subject", 1],
-        "res-subject": ["s:", "Response of %s", None, "patten of response subject", 2],
-        "no-res": ["n", False, None, "do not send response", 3],
-        "read-timeout": ["r:", 10, None, "read command at most x seconds", 4],
-        "send-timeout": ["w:", 10, None, "write response at most x seconds", 5],
-        "run-timeout": ["t:", 10, None, "run command at most x seconds", 6],
-        "verbose": ["v", False, None, "verbose log", 7],
-        "log-file": ["l:", "", None, "log to file, empty means log on screen", 8],
-        "help": ["h", False, None, "show help", 9],
-    }
+    parser = argparse.ArgumentParser(
+        prog='mail_shell',
+        description='run shell command from message on email server and send response back to email server',
+        epilog='by sTeeLM <steelm@madcat.cc> version 1.0.0',
+        exit_on_error=True)
 
-    if not parse_option(argv, parsed_options):
-        return 1
+    parser.add_argument('-f', '--identity-file',
+        action = 'store', 
+        help = 'identity of command server and response server',
+        required = True)
+    parser.add_argument('-m', '--magic-word',
+        action = 'store', 
+        help = 'magic word of subject, default "%(default)s"',
+        required = False,
+        default = 'mail shell')
+    parser.add_argument('-s', '--res-subject',
+        action = 'store', 
+        help = 'patten of response subject, default "%(default)s"',
+        required = False,
+        default = 'Response of "%s"')
+    parser.add_argument('-n', '--no-res',
+        action = 'store_true', 
+        help = 'do not send response',
+        required = False,
+        default = False)
+    parser.add_argument('-r', '--read-timeout',
+        action = 'store', 
+        help = 'read command at most x seconds, default %(default)ss',
+        required = False,
+        default = 30,
+        type=int)
+    parser.add_argument('-w', '--send-timeout',
+        action = 'store', 
+        help = 'write response at most x seconds, default %(default)ss',
+        required = False,
+        default = 30,
+        type=int)
+    parser.add_argument('-t', '--run-timeout',
+        action = 'store', 
+        help = 'run command at most x seconds, default %(default)ss',
+        required = False,
+        default = 30,
+        type=int)
+    parser.add_argument('-v', '--verbose',
+        action = 'store_true', 
+        help = 'verbose log',
+        required = False,
+        default = False)
+    parser.add_argument('-l', '--log-file',
+        action = 'store', 
+        help = 'log to file, empty means log on screen',
+        required = False,
+        default = '')
 
-    if get_opt_by_name(parsed_options, "help"):
-        usage(argv[0], parsed_options)
-        return 0
+    parsed_options = vars(parser.parse_args(sys.argv[1:]))
 
     logger = LoggerWriter(
         argv[0],
-        get_opt_by_name(parsed_options, "log-file"),
+        get_opt_by_name(parsed_options, "log_file"),
         get_opt_by_name(parsed_options, "verbose"),
     )
 
@@ -575,7 +541,7 @@ def main(argv):
 
     if comm:
         res = run_cmd(parsed_options, logger, comm, overides)
-        if res and not get_opt_by_name(parsed_options, "no-res"):
+        if res and not get_opt_by_name(parsed_options, "no_res"):
             send_res(parsed_options, logger, identity, comm, res)
     return 0
 
