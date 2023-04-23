@@ -199,9 +199,9 @@ def fetch_cmd_imap(
     with contextlib.redirect_stderr(logger):
         try:
             cmd_obj = (
-                poplib.IMAP4_SSL(host=cmd_server, timeout=cmd_timeout)
+                imaplib.IMAP4_SSL(host=cmd_server, timeout=cmd_timeout)
                 if is_ssl
-                else poplib.IMAP4(host=cmd_server, timeout=cmd_timeout)
+                else imaplib.IMAP4(host=cmd_server, timeout=cmd_timeout)
             )
         except Exception as ext:
             logger.error(
